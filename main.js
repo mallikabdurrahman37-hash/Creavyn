@@ -275,3 +275,24 @@
     });
   }
 })();
+
+/* ---------- AI chatbot (lazy-loaded after the page is idle, so first paint is unaffected) ---------- */
+(function () {
+  'use strict';
+  function load() {
+    if (document.getElementById('cbScript')) return;
+    var me = document.querySelector('script[src$="main.js"]');
+    var base = me && me.src ? me.src.replace(/[^\/]*$/, '') : '';
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = base + 'chatbot.css';
+    document.head.appendChild(l);
+    var s = document.createElement('script');
+    s.id = 'cbScript'; s.src = base + 'chatbot.js'; s.async = true;
+    document.body.appendChild(s);
+  }
+  function start() {
+    if ('requestIdleCallback' in window) window.requestIdleCallback(load, { timeout: 2500 });
+    else setTimeout(load, 1500);
+  }
+  if (document.readyState === 'complete') start(); else window.addEventListener('load', start);
+})();

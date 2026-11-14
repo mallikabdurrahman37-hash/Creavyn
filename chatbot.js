@@ -46,13 +46,15 @@
       if (d && Array.isArray(d.m)) history = d.m.filter(function (x) { return x && (x.role === 'user' || x.role === 'assistant') && typeof x.content === 'string'; }).slice(-40);
     } catch (e) { history = []; }
   }
-  function save() { try { sessionStorage.setItem(STORE, JSON.stringify({ m: history.slice(-40) })); } catch (e) {} }
+  function save() { updateCopy(); try { sessionStorage.setItem(STORE, JSON.stringify({ m: history.slice(-40) })); } catch (e) {} }
 
   /* ---------- DOM ---------- */
   function h(tag, cls, html) { var e = doc.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 
   var ICON = {
     close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15V4h11"/></svg>',
+    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>',
     reset: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></svg>',
     send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>'
   };
@@ -60,15 +62,16 @@
   var wrap = h('div', 'cb-root');
   wrap.innerHTML =
     '<button class="cb-launcher" type="button" aria-label="Chat with the CREAVYN assistant" aria-expanded="false" aria-controls="cbPanel">' +
-      '<img src="' + IMG + '" alt="" width="300" height="324" decoding="async"><span class="cb-tip" aria-hidden="true">Ask CREAVYN</span>' +
+      '<img src="' + IMG + '" alt="" width="300" height="324" decoding="async"><span class="cb-tip" aria-hidden="true">Ask our AI assistant</span>' +
     '</button>' +
-    '<section class="cb-panel" id="cbPanel" role="dialog" aria-label="CREAVYN assistant chat" tabindex="-1" hidden>' +
-      '<header class="cb-head">' +
+    '<div class="cb-panel" id="cbPanel" role="dialog" aria-label="CREAVYN assistant chat" tabindex="-1" hidden>' +
+      '<div class="cb-head">' +
         '<span class="cb-avatar" aria-hidden="true"><img src="' + IMG + '" alt="" width="300" height="324" decoding="async"></span>' +
-        '<div class="cb-title"><h2>CREAVYN Assistant</h2><p>AI &middot; Ask about our studio</p></div>' +
+        '<div class="cb-title"><h2>CREAVYN Assistant</h2><p>AI assistant</p></div>' +
+        '<button class="cb-hbtn" type="button" data-act="copy" aria-label="Copy entire chat" title="Copy chat" disabled>' + ICON.copy + '</button>' +
         '<button class="cb-hbtn" type="button" data-act="reset" aria-label="Start a new chat" title="New chat">' + ICON.reset + '</button>' +
         '<button class="cb-hbtn" type="button" data-act="close" aria-label="Close chat" title="Close">' + ICON.close + '</button>' +
-      '</header>' +
+      '</div>' +
       '<div class="cb-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></div>' +
       '<div class="cb-sugg" role="group" aria-label="Suggested questions"></div>' +
       '<form class="cb-form" autocomplete="off">' +
@@ -77,7 +80,7 @@
         '<button class="cb-send" type="submit" aria-label="Send message" disabled>' + ICON.send + '</button>' +
       '</form>' +
       '<p class="cb-foot">AI replies may contain mistakes</p>' +
-    '</section>';
+    '</div>';
 
   var launcher = wrap.querySelector('.cb-launcher');
   var panel = wrap.querySelector('.cb-panel');
@@ -86,6 +89,7 @@
   var form = wrap.querySelector('.cb-form');
   var input = wrap.querySelector('.cb-input');
   var sendBtn = wrap.querySelector('.cb-send');
+  var copyBtn = wrap.querySelector('[data-act="copy"]');
 
   // If the launcher artwork can't load, keep a usable text button instead of an empty gap.
   launcher.querySelector('img').addEventListener('error', function () {
@@ -180,6 +184,30 @@
     toBottom();
   }
 
+  /* ---------- copy whole chat ---------- */
+  function updateCopy() { if (copyBtn) copyBtn.disabled = !history.length; }
+  function chatText() {
+    return 'CREAVYN chat\n\n' + history.map(function (x) { return (x.role === 'user' ? 'You' : 'CREAVYN') + ': ' + x.content; }).join('\n\n');
+  }
+  function legacyCopy(t) {
+    var ta = h('textarea'); ta.value = t; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    doc.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+    var ok = false; try { ok = doc.execCommand('copy'); } catch (e) {}
+    ta.remove(); return ok;
+  }
+  function copyChat() {
+    if (!history.length) return;
+    var t = chatText();
+    function done(ok) {
+      copyBtn.innerHTML = ok ? ICON.check : ICON.copy;
+      copyBtn.classList.toggle('done', ok);
+      copyBtn.setAttribute('aria-label', ok ? 'Chat copied' : 'Copy entire chat');
+      setTimeout(function () { copyBtn.innerHTML = ICON.copy; copyBtn.classList.remove('done'); copyBtn.setAttribute('aria-label', 'Copy entire chat'); }, 1800);
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(function () { done(true); }, function () { done(legacyCopy(t)); });
+    else done(legacyCopy(t));
+  }
+
   /* ---------- sending ---------- */
   function setBusy(v) {
     busy = v;
@@ -262,7 +290,10 @@
   /* ---------- open / close, mobile keyboard, scroll lock ---------- */
   function fit() {
     var v = window.visualViewport;
-    if (isOpen && sheet.matches && v) {
+    // Normally the sheet is simply 100dvh. Only when a soft keyboard shrinks the *visual* viewport
+    // (iOS / some Android browsers) do we size the sheet to the visible area.
+    var kb = isOpen && sheet.matches && v && doc.activeElement === input && (window.innerHeight - v.height) > 120;
+    if (kb) {
       panel.style.setProperty('--cb-vh', v.height + 'px');
       panel.style.setProperty('--cb-top', v.offsetTop + 'px');
     } else {
@@ -279,6 +310,7 @@
     isOpen = true;
     panel.hidden = false;
     root.classList.add('cb-open');
+    launcher.classList.remove('cb-hint');
     launcher.setAttribute('aria-expanded', 'true');
     fit();
     toBottom();
@@ -299,7 +331,7 @@
   launcher.addEventListener('click', open);
   panel.addEventListener('click', function (e) {
     var a = e.target.closest('[data-act]');
-    if (a) { if (a.getAttribute('data-act') === 'close') close(); else reset(); return; }
+    if (a) { var act = a.getAttribute('data-act'); if (act === 'close') close(); else if (act === 'copy') copyChat(); else reset(); return; }
     var c = e.target.closest('.cb-chip');
     if (c) { send(c.getAttribute('data-q')); return; }
     var r = e.target.closest('[data-retry]');
@@ -311,6 +343,7 @@
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(input.value); }
   });
+  input.addEventListener('blur', function () { setTimeout(fit, 150); });
   input.addEventListener('focus', function () { setTimeout(function () { if (isOpen) { fit(); toBottomIfNearEnd(); } }, 250); });
 
   if (window.visualViewport) {
@@ -323,9 +356,11 @@
 
   /* ---------- go ---------- */
   load();
+  updateCopy();
   buildSuggestions();
   renderAll();
   updateSend();
   doc.body.appendChild(wrap);
+  launcher.classList.add('cb-hint');
+  setTimeout(function () { launcher.classList.remove('cb-hint'); }, 9000);
 })();
-        

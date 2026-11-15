@@ -611,3 +611,7 @@ footer{border-top:2px solid var(--ink)}
 @media (prefers-reduced-motion:reduce){
   .project-media:hover{transform:none}
 }
+/* footer PDF button */
+.foot a.btn{display:inline-flex;padding:0 24px;margin-top:10px;font-size:14px}
+.foot a.btn.solid{color:var(--paper)}
+.foot a.btn.solid:hover{color:var(--paper)}
